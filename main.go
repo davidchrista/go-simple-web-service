@@ -2,8 +2,12 @@ package main
 
 import (
 	"net/http"
+	"time"
 
+	"github.com/auth0-community/go-auth0"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"gopkg.in/square/go-jose.v2"
 )
 
 // album represents data about a record album.
@@ -64,11 +68,47 @@ func priceReduction(c *gin.Context) {
 }
 
 func getHello(c *gin.Context) {
-	c.String(http.StatusOK, "Hello, Go!")
+	c.String(http.StatusOK, "Hello Go!")
+}
+
+func AuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		domain := "https://dev-gzm0pgbh.us.auth0.com/"
+
+		config := auth0.NewConfiguration(
+			auth0.NewJWKClient(auth0.JWKClientOptions{URI: domain + ".well-known/jwks.json"}, nil),
+			[]string{"http://localhost:4000"},
+			domain,
+			jose.RS256,
+		)
+
+		validator := auth0.NewValidator(config, nil)
+
+		token, err := validator.ValidateRequest(c.Request)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			c.Abort()
+			return
+		}
+		c.Set("user", token)
+
+		c.Next()
+	}
 }
 
 func main() {
 	router := gin.Default()
+
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{"GET"},
+		AllowHeaders:     []string{"Origin", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
+
+	router.Use(AuthMiddleware())
 
 	router.GET("/albums/:id", getAlbum)
 	router.GET("/albums", getAlbums)
@@ -77,5 +117,5 @@ func main() {
 
 	router.GET("/", getHello)
 
-	router.Run("localhost:8080")
+	router.Run("localhost:4200")
 }
